@@ -1,5 +1,4 @@
 const EventEmitter = require("events");
-const Utils = require("./utils");
 const NotifyableProperty = require("./NotifyableProperty");
 const RaftNode = require("./RaftNode");
 

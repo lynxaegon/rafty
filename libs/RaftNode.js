@@ -1,9 +1,11 @@
 const EventEmitter = require("events");
+const Utils = require("./utils");
 
 class RaftNode extends EventEmitter {
     constructor(raft, peer) {
         super();
 
+        this.id = Utils.uuidv4();
         this.raft = raft;
         this.peer = peer;
         this.state = RaftNode.State.INITIAL;
@@ -11,13 +13,18 @@ class RaftNode extends EventEmitter {
 
     setup() {
         return new Promise((resolve, reject) => {
-            this.raft.transport.connect(this).then(() => {
+            this.raft.transport.connect(this).then((nodeID) => {
                 this.state = RaftNode.State.CONNECTED;
                 setTimeout(() => {
                     this.send({
                         rpc: "discover"
                     });
-                }, 0)
+                }, 0);
+
+                if(nodeID) {
+                    this.id = nodeID;
+                }
+
                 resolve();
             }).catch((e) => {
                 this.state = RaftNode.State.DEAD;
