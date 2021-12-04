@@ -5,10 +5,10 @@ const Utils = require("./utils");
 const Timer = require("./Timer");
 
 class Rafty extends EventEmitter {
-    constructor(id, options) {
+    constructor(options) {
         super()
 
-        this.id = id || Utils.uuidv4();
+        this.id = null;
         this.options = Object.assign({
             heartbeat: 50,
             electionMin: 150,
@@ -25,8 +25,16 @@ class Rafty extends EventEmitter {
             if(!this.voted) {
                 this.voted = true;
                 this.votes++;
-                console.log("[" + this.id + "] Voted for:", "self");
-                this.broadcast(this._messageVoteForSelf());
+
+                if(this.nodes.length > 0) {
+                    // send leader election term
+                    console.log("[" + this.id + "] Voted for:", "self");
+                    this.broadcast(this._messageVoteForSelf());
+                } else {
+                    // make leader (we are alone in this world...)
+                    console.log("[" + this.id + "] No Votes! No other nodes alive!");
+                    this.leader = this.id;
+                }
             }
         });
 
@@ -42,11 +50,17 @@ class Rafty extends EventEmitter {
 
     setTransport(transport) {
         this.transport = transport
+        this.transport.raft = this;
+        if(this.transport.getId) {
+            this.id = this.transport.getId();
+        } else {
+            this.id = Utils.uuidv4()
+        }
         return this;
     }
 
-    setDiscovery(discoverFnc) {
-        this.discover = discoverFnc;
+    setDiscovery(discovery) {
+        this.discovery = discovery;
         return this;
     }
 
@@ -93,8 +107,10 @@ class Rafty extends EventEmitter {
             this.state = Rafty.State.CONNECTING;
 
             // Auto discover if available
-            if(this.discover) {
-                this.discover((peers) => {
+            if(this.discovery) {
+                this.discovery.bind(this);
+
+                this.discovery.discover((peers) => {
                     for (let peer of peers) {
                         this.join(peer);
                     }
@@ -120,6 +136,7 @@ class Rafty extends EventEmitter {
         this.state = Rafty.State.DEAD;
         this.term = -1;
 
+        this.discovery.unbind(this);
         this.transport.stop().then(() => {
             this.transport = null;
             this.discover = null;
@@ -212,7 +229,6 @@ class Rafty extends EventEmitter {
             default:
                 console.error("["+this.id+"] Invalid RPC command! ('"+ data.rpc +"')");
         }
-        // console.log("["+this.options.port+"]["+node.peer.id+"]", data);
     }
 
     onPropertyChanged(event) {
@@ -221,13 +237,7 @@ class Rafty extends EventEmitter {
                 // console.log("["+this.id+"] State:", Rafty.State[this.state]);
                 if(this.state == Rafty.State.CANDIDATE) {
                     this.term++;
-                    if(this.nodes.length > 0) {
-                        // send leader election term
-                        this.voteTimer.once();
-                    } else {
-                        this.leader = this.id;
-                    }
-                    // this.test();
+                    this.voteTimer.once();
                 } else if(this.state == Rafty.State.SPLIT_VOTE) {
                     this.state = Rafty.State.CANDIDATE;
                 }
@@ -285,7 +295,6 @@ class Rafty extends EventEmitter {
     }
 
     test() {
-        console.log("PORT:", this.options.port);
         for(let node of this.nodes) {
             console.log(node.id, node.state);
         }
