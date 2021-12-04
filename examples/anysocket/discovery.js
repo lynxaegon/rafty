@@ -1,7 +1,7 @@
 const redis = require("redis").createClient();
 const { promisify } = require("util");
 const redisGet = promisify(redis.get).bind(redis);
-const Timer = require("./libs/Timer")
+const Timer = require("../../libs/Timer")
 
 redis.on("error", function(error) {
     console.error("REDIS Err:", error);
