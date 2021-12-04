@@ -9,15 +9,15 @@ redis.on("error", function(error) {
 });
 
 let rafts = [];
-
+let args = process.argv.splice(2);
 let index = 0;
 function createNode() {
     let PORT = 8080 + index;
-    let raft = new Rafty({
+    let anysocket = new AnySocket();
+    let raft = new Rafty(anysocket.id, {
         port: PORT
     });
     rafts.push(raft);
-    let anysocket = new AnySocket();
     // anysocket.id = PORT;
     const connectionsAccepted = {};
 
@@ -27,7 +27,6 @@ function createNode() {
         }
     }));
 
-    anysocket.listen("ws", PORT);
     index++;
 
     anysocket.on("connected", (peer) => {
@@ -44,6 +43,12 @@ function createNode() {
 
     raft
         .setTransport({
+            start: () => {
+                return new Promise((resolve, reject) => {
+                    anysocket.listen("ws", PORT);
+                    resolve();
+                });
+            },
             connect: (node) => {
                 return new Promise((resolve, reject) => {
                     if(typeof node.peer == "object")  {
@@ -51,24 +56,17 @@ function createNode() {
                             node.emit("data", packet.msg);
                         });
 
-                        if(raft.hasNode(item => item.peer.id == node.peer.id)) {
-                            return reject("onConnect Err: Duplicate node found!")
-                        }
-                        resolve();
+                        resolve(node.peer.id);
                     } else {
                         anysocket.connect("ws", "127.0.0.1", node.peer)
                             .then((peer) => {
                                 connectionsAccepted[peer.id] = true;
                                 node.peer = peer;
 
-                                if(raft.hasNode(node => node.peer.id == peer.id)) {
-                                    return reject("onConnect Err: Duplicate found!")
-                                }
-
                                 node.peer.on("message", (packet) => {
                                     node.emit("data", packet.msg);
                                 });
-                                resolve();
+                                resolve(peer.id);
                             })
                             .catch((reason) => {
                                 reject(reason);
@@ -83,7 +81,15 @@ function createNode() {
                 });
             },
             disconnect: (node) => {
-                node.peer.disconnect();
+                return new Promise((resolve, reject) => {
+                    if(node.peer && node.peer.disconnect) {
+                        node.peer.disconnect();
+                    }
+                    resolve();
+                });
+            },
+            stop: () => {
+                return anysocket.stop();
             }
         })
         .setDiscovery((callback) => {
@@ -111,17 +117,23 @@ function createNode() {
         .start();
 }
 
-// testing only
-redis.flushall();
+if(args[0])
+{
+    index = parseInt(args[0]);
+    // testing only
+    if(index == 0) {
+        redis.flushall();
+        setTimeout(() => {
+            rafts[0].stop();
+            redis.quit();
+        }, 3 * 1000);
+    }
 
-// createNode();
-createNode();
-createNode();
-createNode();
+    createNode();
+}
 
-
-setTimeout(() => {
-    rafts[0].test();
-    rafts[1].test();
-    rafts[2].test();
-}, 2000);
+// setTimeout(() => {
+//     rafts[0].test();
+//     rafts[1].test();
+//     rafts[2].test();
+// }, 2000);

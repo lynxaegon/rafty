@@ -9,7 +9,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "anysocket": "^0.4.6",
+    "anysocket": "^0.4.7",
     "redis": "^3.1.2"
   }
 }

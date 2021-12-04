@@ -11,25 +11,45 @@ class RaftNode extends EventEmitter {
         this.state = RaftNode.State.INITIAL;
     }
 
+    changeState(state) {
+        if(this.state != state) {
+            this.state = state;
+
+            switch (state) {
+                case RaftNode.State.DISCOVERY:
+                    setTimeout(() => {
+                        this.send({
+                            rpc: "discover"
+                        });
+                    }, 0);
+                    break;
+                case RaftNode.State.CONNECTED:
+                    break;
+                case RaftNode.State.DEAD:
+                    this.raft.transport.disconnect(this);
+                    this.raft = null;
+                    this.peer = null;
+                    break;
+                default:
+                    console.error("Invalid RaftNode State:", state);
+            }
+        } else {
+            console.error("RaftNode already in the state:", state);
+        }
+
+        return this;
+    }
+
     setup() {
         return new Promise((resolve, reject) => {
             this.raft.transport.connect(this).then((nodeID) => {
-                this.state = RaftNode.State.CONNECTED;
-                setTimeout(() => {
-                    this.send({
-                        rpc: "discover"
-                    });
-                }, 0);
-
+                this.changeState(RaftNode.State.DISCOVERY);
                 if(nodeID) {
                     this.id = nodeID;
                 }
 
                 resolve();
-            }).catch((e) => {
-                this.state = RaftNode.State.DEAD;
-                reject(e);
-            });
+            }).catch(reject);
         });
     }
 
@@ -38,19 +58,14 @@ class RaftNode extends EventEmitter {
     }
 
     disconnect() {
-        if(this.state != RaftNode.State.DEAD) {
-            this.state = RaftNode.State.DEAD;
-            this.raft.transport.disconnect(this);
-            this.raft = null;
-            this.peer = null;
-        }
+        this.changeState(RaftNode.State.DEAD);
     }
 }
 
 RaftNode.State = {
     INITIAL: 1,
-    CONNECTED: 2,
-    ACTIVE: 3,
+    DISCOVERY: 2,
+    CONNECTED: 3,
     DEAD: -1
 }
 
