@@ -1,32 +1,33 @@
-const redis = require("redis").createClient();
-const { promisify } = require("util");
-const redisGet = promisify(redis.get).bind(redis);
 const Timer = require("../../libs/Timer")
-
-redis.on("error", function(error) {
-    console.error("REDIS Err:", error);
-});
+const { promisify } = require("util");
 
 const TTL = 5;
 module.exports = class Discovery {
     bind(raft) {
+        this.redis = require("redis").createClient();
+        this.redisGet = promisify(this.redis.get).bind(this.redis);
+
+        this.redis.on("error", function(error) {
+            console.error("REDIS Err:", error);
+        });
+
         this.port = raft.transport.port;
-        redis.setex("servers:" + raft.id, TTL, JSON.stringify({
+        this.redis.setex("servers:" + raft.id, TTL, JSON.stringify({
             info: {
                 port: raft.transport.port
             }
         }));
         this.keepalive = new Timer(TTL / 2 * 1000, () => {
-            redis.expire("servers:" + raft.id, TTL);
+            this.redis.expire("servers:" + raft.id, TTL);
         });
         this.keepalive.indefinite();
     }
 
     discover(callback) {
-        redis.keys("servers:*", (err, result) => {
+        this.redis.keys("servers:*", (err, result) => {
             let promises = [];
             for(let key of result) {
-                promises.push(redisGet(key));
+                promises.push(this.redisGet(key));
             }
 
             Promise.all(promises).then((result) => {
@@ -47,7 +48,7 @@ module.exports = class Discovery {
 
     unbind(raft) {
         this.keepalive.cancel();
-        redis.del("servers:" + raft.id);
-        redis.quit();
+        this.redis.del("servers:" + raft.id);
+        this.redis.quit();
     }
 }
